@@ -1,0 +1,457 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "AWS CloudFormation template that creates a CloudFront distribution, a Applicaiton Laod balancer, a EC2 instance (t2.small) and an RDS MySQL instance (t2.micro) and a VPC",
+
+  "Parameters": {
+    "KeyName": {
+      "Description": "Name of an existing EC2 Keypair",
+      "Type": "String",
+      "Default": "keypair",
+      "ConstraintDescription": "Must be the name of an existing EC2 KeyPair."
+    },
+    "EC2InstanceType": {
+      "Description": "Liferay Server EC2 instance type",
+      "Type": "String",
+      "Default": "t2.small",
+      "AllowedValues": [ "t2.micro", "t2.small", "t2.medium", "t2.large" ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "RDSInstanceType": {
+      "Description": "MySQL database RDS instance type",
+      "Type": "String",
+      "Default": "db.t2.small",
+      "AllowedValues": [ "db.t2.micro", "db.t2.small", "db.t2.medium", "db.t2.large" ],
+      "ConstraintDescription": "must be a valid RDS instance type."
+    },
+    "DBName": {
+      "Default": "lportal",
+      "Description": "The database name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+    },
+    "DBUser": {
+      "Default": "luser",
+      "Description": "The database admin account username",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+    },
+    "DBPassword": {
+      "Default": "passw0rd",
+      "NoEcho": "true",
+      "Description": "The database admin account password",
+      "Type": "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "ConstraintDescription": "must contain only alphanumeric characters."
+    }
+  },
+  "Mappings": {
+    "SubnetConfig": {
+      "VPC": { "CIDR": "10.0.0.0/16" },
+      "Public1": { "CIDR": "10.0.1.0/24" },
+      "Public2": { "CIDR": "10.0.2.0/24" },
+      "Private1": { "CIDR": "10.0.3.0/24" },
+      "Private2": { "CIDR": "10.0.4.0/24" }
+    },
+    "RegionMap": {
+      "ap-south-1": { "HVM64": "ami-04ea996e7a3e7ad6b" },
+      "eu-west-3": { "HVM64": "ami-075b44448d2276521" },
+      "eu-west-2": { "HVM64": "ami-061a2d878e5754b62" },
+      "eu-west-1": { "HVM64": "ami-0773391ae604c49a4" },
+      "ap-northeast-2": { "HVM64": "ami-0e0f4ff1154834540" },
+      "ap-northeast-1": { "HVM64": "ami-06c43a7df16e8213c" },
+      "sa-east-1": { "HVM64": "ami-0318cb6e2f90d688b" },
+      "ca-central-1": { "HVM64": "ami-0f2cb2729acf8f494" },
+      "ap-southeast-1": { "HVM64": "ami-0eb1f21bbd66347fe" },
+      "ap-southeast-2": { "HVM64": "ami-0789a5fb42dcccc10" },
+      "eu-central-1": { "HVM64": "ami-086a09d5b9fa35dc7" },
+      "us-east-1": { "HVM64": "ami-059eeca93cf09eebd" },
+      "us-east-2": { "HVM64": "ami-0782e9ee97725263d" },
+      "us-west-1": { "HVM64": "ami-0ad16744583f21877" },
+      "us-west-2": { "HVM64": "ami-0e32ec5bc225539f5" },
+    }
+  },
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": { "Fn::FindInMap": [ "SubnetConfig", "VPC", "CIDR" ] },
+        "EnableDnsSupport": "true",
+        "EnableDnsHostnames": "true"
+      }
+    },
+    "SubnetPublic1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": { "Fn::FindInMap": [ "SubnetConfig", "Public1", "CIDR" ] },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            0,
+            { "Fn::GetAZs": "" }
+          ]
+        }
+      }
+    },
+    "SubnetPublic2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": { "Fn::FindInMap": [ "SubnetConfig", "Public2", "CIDR" ] },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            1,
+            { "Fn::GetAZs": "" }
+          ]
+        }
+      }
+    },
+    "SubnetPrivate1": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": { "Fn::FindInMap": [ "SubnetConfig", "Private1", "CIDR" ] },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            0,
+            { "Fn::GetAZs": "" }
+          ]
+        }
+      }
+    },
+    "SubnetPrivate2": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "CidrBlock": { "Fn::FindInMap": [ "SubnetConfig", "Private2", "CIDR" ] },
+        "AvailabilityZone": {
+          "Fn::Select": [
+            1,
+            { "Fn::GetAZs": "" }
+          ]
+        }
+      }
+    },
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+      }
+    },
+    "RouteTablePublic": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        }
+      }
+    },
+    "EC2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            { "Ref": "AWS::Region" },
+            "HVM64"
+          ]
+        },
+        "InstanceType": { "Ref": "EC2InstanceType" },
+        "KeyName": { "Ref": "KeyName" },
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/sda1",
+            "Ebs": { "VolumeSize": "20" }
+          }
+        ],
+        "NetworkInterfaces": [
+          {
+            "AssociatePublicIpAddress": "true",
+            "DeleteOnTermination": "true",
+            "DeviceIndex": 0,
+            "SubnetId": {
+              "Ref": "SubnetPublic1"
+            },
+            "GroupSet": [
+              {
+                "Ref": "sgSecurityGroupEC2"
+              }
+            ]
+
+          }
+        ]
+      }
+    },
+    "ApplicationLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "SecurityGroups": [
+          {
+            "Ref": "sgSecurityGroupALB"
+          }
+        ],
+        "Subnets": [
+          { "Ref": "SubnetPublic1" },
+          { "Ref": "SubnetPublic2" }
+        ]
+      }
+    },
+    "ALBTargetGroup": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "HealthCheckIntervalSeconds": 30,
+        "HealthCheckTimeoutSeconds": 5,
+        "HealthyThresholdCount": 3,
+        "Port": 8080,
+        "Protocol": "HTTP",
+        "UnhealthyThresholdCount": 5,
+        "VpcId": { "Ref": "VPC" },
+        "Targets": [
+          {
+            "Id": { "Ref": "EC2Instance" },
+            "Port": 8080
+          }
+        ],
+        "TargetGroupAttributes": [
+          {
+            "Key": "stickiness.enabled",
+            "Value": "true"
+          },
+          {
+            "Key": "stickiness.type",
+            "Value": "lb_cookie"
+          },
+          {
+            "Key": "stickiness.lb_cookie.duration_seconds",
+            "Value": "180"
+          }
+        ]
+      }
+    },
+    "ALBListener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "DefaultActions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": { "Ref": "ALBTargetGroup" }
+          }
+        ],
+        "LoadBalancerArn": { "Ref": "ApplicationLoadBalancer" },
+        "Port": "80",
+        "Protocol": "HTTP"
+      }
+    },
+    "CloudFrontDistribution": {
+      "Type": "AWS::CloudFront::Distribution",
+      "Properties": {
+        "DistributionConfig": {
+          "Origins": [
+            {
+              "DomainName": { "Fn::GetAtt": [ "ApplicationLoadBalancer", "DNSName" ] },
+              "Id": "ApplicationLoadBalancer",
+              "CustomOriginConfig": {
+                "HTTPPort": "80",
+                "HTTPSPort": "443",
+                "OriginProtocolPolicy": "http-only"
+              }
+            }
+          ],
+          "Enabled": "true",
+          "DefaultCacheBehavior": {
+            "TargetOriginId": "ApplicationLoadBalancer",
+            "SmoothStreaming": "false",
+            "ForwardedValues": {
+              "QueryString": "false",
+              "Cookies": { "Forward": "all" }
+            },
+            "ViewerProtocolPolicy": "allow-all"
+          },
+          "PriceClass": "PriceClass_200",
+          "Restrictions": {
+            "GeoRestriction": {
+              "RestrictionType": "none",
+              "Locations": []
+            }
+          },
+          "ViewerCertificate": { "CloudFrontDefaultCertificate": "true" }
+        }
+      }
+    },
+    "RDSInstance": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "AllocatedStorage": "5",
+        "DBInstanceClass": { "Ref": "RDSInstanceType" },
+        "Engine": "mysql",
+        "EngineVersion": "5.7.22",
+        "DBName": { "Ref": "DBName" },
+        "MasterUsername": { "Ref": "DBUser" },
+        "MasterUserPassword": { "Ref": "DBPassword" },
+        "DBSubnetGroupName": {
+          "Ref": "dbSubnetGroup"
+        },
+        "DBParameterGroupName": {
+          "Ref": "dbParameterGroup"
+        },
+        "VPCSecurityGroups": [
+          {
+            "Ref": "sgSecurityGroupRDS"
+          }
+        ]
+      }
+    },
+    "dbSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "MySQL subnet group",
+        "SubnetIds": [
+          {
+            "Ref": "SubnetPrivate1"
+          },
+          {
+            "Ref": "SubnetPrivate2"
+          }
+        ]
+      }
+    },
+    "dbParameterGroup": {
+      "Type": "AWS::RDS::DBParameterGroup",
+      "Properties": {
+        "Description": "Parameter Group for MySQL",
+        "Family": "mysql5.7",
+        "Parameters": {
+          "binlog_cache_size": "32768",
+          "binlog_format": "MIXED",
+          "character_set_database": "utf8mb4",
+          "character_set_server": "utf8mb4",
+          "collation_server": "utf8mb4_general_ci",
+          "default_password_lifetime": "0",
+          "explicit_defaults_for_timestamp": "1",
+          "innodb_buffer_pool_size": "{DBInstanceClassMemory*3/4}"
+        }
+      }
+    },
+    "sgSecurityGroupALB": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow HTTP traffic from Internet",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "sgSecurityGroupEC2": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow SSH and HTTP traffic from Internet",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 8080,
+            "ToPort": 8080,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "sgSecurityGroupRDS": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Allow DB traffic over port 3306 from EC2 instance",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 3306,
+            "ToPort": 3306,
+            "SourceSecurityGroupId": { "Ref": "sgSecurityGroupEC2" }
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "IpProtocol": "-1",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    },
+    "vpcgwassoc": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "InternetGatewayId": {
+          "Ref": "InternetGateway"
+        }
+      }
+    },
+    "subnetroute1": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RouteTablePublic"
+        },
+        "SubnetId": {
+          "Ref": "SubnetPublic2"
+        }
+      }
+    },
+    "subnetroute2": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "RouteTablePublic"
+        },
+        "SubnetId": {
+          "Ref": "SubnetPublic1"
+        }
+      }
+    },
+    "gwroute1": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "RouteTableId": {
+          "Ref": "RouteTablePublic"
+        },
+        "GatewayId": {
+          "Ref": "InternetGateway"
+        }
+      },
+      "DependsOn": "vpcgwassoc"
+    }
+  }
+}
